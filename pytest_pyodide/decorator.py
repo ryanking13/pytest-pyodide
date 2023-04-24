@@ -65,7 +65,7 @@ class Unpickler(pickle.Unpickler):
         #     return JsException
         # else:
         #     return super().find_class(module, name)
-        
+        print(module, name)
         return super().find_class(module, name)
 
 
