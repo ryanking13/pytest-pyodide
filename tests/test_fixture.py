@@ -49,9 +49,9 @@ def myfixture_variant():
     yield 99
 
 
-# @rename_fixture("myfixture", "myfixture_variant")
-# def test_rename_fixture2(myfixture):
-#     assert myfixture == 99
+@rename_fixture("myfixture", "myfixture_variant")
+def test_rename_fixture2(myfixture):
+    assert myfixture == 99
 
 
 # def test_has_standalone_fixture(pytester):
