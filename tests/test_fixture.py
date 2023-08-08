@@ -2,7 +2,7 @@ import pytest
 
 from pytest_pyodide.decorator import run_in_pyodide
 from pytest_pyodide.fixture import rename_fixture
-from pytest_pyodide.hook import _has_standalone_fixture
+from pytest_pyodide.utils import _has_standalone_fixture
 
 
 @pytest.mark.parametrize("dummy", [1, 2, 3])

@@ -53,3 +53,18 @@ def built_packages(dist_dir: Path) -> list[str]:
 
 def package_is_built(package_name: str, dist_dir: Path) -> bool:
     return package_name.lower() in built_packages(dist_dir)
+
+
+STANDALONE_FIXTURES = [
+    "selenium_standalone",
+    "selenium_standalone_noload",
+    "selenium_webworker_standalone",
+]
+
+
+def _has_standalone_fixture(item):
+    for fixture in item._request.fixturenames:
+        if fixture in STANDALONE_FIXTURES:
+            return True
+
+    return False

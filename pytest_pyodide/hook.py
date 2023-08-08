@@ -18,7 +18,7 @@ from .run_tests_inside_pyodide import (
     get_browser_pyodide,
     run_test_in_pyodide,
 )
-from .utils import parse_xfail_browsers
+from .utils import parse_xfail_browsers, _has_standalone_fixture
 
 RUNTIMES = ["firefox", "chrome", "safari", "node"]
 RUNTIMES_AND_HOST = RUNTIMES + ["host"]
@@ -168,21 +168,6 @@ def pytest_pycollect_makemodule(module_path: Path, path: Any, parent: Any) -> No
 def pytest_generate_tests(metafunc: Any) -> None:
     if "runtime" in metafunc.fixturenames:
         metafunc.parametrize("runtime", pytest.pyodide_runtimes, scope="module")
-
-
-STANDALONE_FIXTURES = [
-    "selenium_standalone",
-    "selenium_standalone_noload",
-    "selenium_webworker_standalone",
-]
-
-
-def _has_standalone_fixture(item):
-    for fixture in item._request.fixturenames:
-        if fixture in STANDALONE_FIXTURES:
-            return True
-
-    return False
 
 
 def pytest_collection_modifyitems(items: list[Any]) -> None:
