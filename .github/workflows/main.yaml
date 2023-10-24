@@ -79,7 +79,7 @@ jobs:
       DISPLAY: :99
     steps:
       - uses: actions/checkout@v3
-      
+
       - uses: actions/setup-python@v3
         with:
           python-version: ${{ needs.get_versions.outputs.python }}
@@ -141,7 +141,6 @@ jobs:
           else
               ${{needs.get_versions.outputs.pythonexec}} -m pip install pytest-pyodide
           fi
-          which npm && npm install -g npm && npm update
           which npm && npm install node-fetch@2
       - name: Run tests
         shell: bash -l {0}
