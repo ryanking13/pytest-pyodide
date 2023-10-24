@@ -79,14 +79,10 @@ jobs:
       DISPLAY: :99
     steps:
       - uses: actions/checkout@v3
+      
       - uses: actions/setup-python@v3
         with:
           python-version: ${{ needs.get_versions.outputs.python }}
-      - name: Install node
-        uses: actions/setup-node@v3
-        if: ${{ contains(inputs.browser, 'node') || inputs.runner == 'playwright' }}
-        with:
-          node-version: ${{ inputs.node-version }}
 
       - name: Cache Playwright browsers
         uses: actions/cache@v3
