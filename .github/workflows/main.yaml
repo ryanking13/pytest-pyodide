@@ -141,6 +141,7 @@ jobs:
           else
               ${{needs.get_versions.outputs.pythonexec}} -m pip install pytest-pyodide
           fi
+          which npm && npm install -g npm
           which npm && npm install -g node-fetch@2
       - name: Run tests
         shell: bash -l {0}
