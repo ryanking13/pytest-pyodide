@@ -143,10 +143,10 @@ jobs:
           fi
           which npm && npm install -g node-fetch@2
           npm list -g | grep node-fetch -q
-          export NODE_PATH=$(npm root -g)
       - name: Run tests
         shell: bash -l {0}
         run: |
+          export NODE_PATH=$(npm root -g)
           pytest -v \
             --cov=pytest_pyodide \
             --dist-dir=./pyodide-dist/ \
