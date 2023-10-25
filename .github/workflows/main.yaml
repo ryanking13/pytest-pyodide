@@ -141,12 +141,12 @@ jobs:
           else
               ${{needs.get_versions.outputs.pythonexec}} -m pip install pytest-pyodide
           fi
-          which npm && npm install -g node-fetch@2
-          npm list -g | grep node-fetch -q
+          NPM_VERSION=$(npm --version)
+          which npm && npm install -g npm@${NPM_VERSION}
+          which npm && npm install node-fetch@2
       - name: Run tests
         shell: bash -l {0}
         run: |
-          export NODE_PATH=$(npm root -g)
           pytest -v \
             --cov=pytest_pyodide \
             --dist-dir=./pyodide-dist/ \
