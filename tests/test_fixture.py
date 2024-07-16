@@ -1,5 +1,6 @@
 import pytest
 
+from pytest_pyodide import get_runtimes
 from pytest_pyodide.decorator import run_in_pyodide
 from pytest_pyodide.fixture import rename_fixture
 from pytest_pyodide.hook import _has_standalone_fixture
@@ -23,7 +24,7 @@ def test_playwright_browsers(playwright_browsers, request):
     if request.config.option.runner.lower() != "playwright":
         pytest.skip("this test should only run when playwright is specified")
 
-    runtimes = pytest.pyodide_runtimes
+    runtimes = get_runtimes()
 
     assert set(playwright_browsers.keys()) == set(runtimes)
 

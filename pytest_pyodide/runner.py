@@ -5,10 +5,7 @@ from pathlib import Path
 import pexpect
 import pytest
 
-CHROME_FLAGS: list[str] = ["--js-flags=--expose-gc"]
-FIREFOX_FLAGS: list[str] = []
-NODE_FLAGS: list[str] = []
-
+from .config import get_global_config, get_runtimes
 
 TEST_SETUP_CODE = """
 Error.stackTraceLimit = Infinity;
@@ -88,8 +85,6 @@ globalThis.assertThrowsAsync = async function (cb, errname, pattern) {
     checkError(err, errname, pattern, pat_str, thiscallstr);
 };
 """.strip()
-
-INITIALIZE_SCRIPT = "pyodide.runPython('');"
 
 
 class JavascriptException(Exception):
@@ -201,7 +196,7 @@ class _BrowserBaseRunner:
             }
             """
         )
-        self.run_js(INITIALIZE_SCRIPT)
+        self.run_js(get_global_config().initialize_script)
         from .decorator import initialize_decorator
 
         initialize_decorator(self)
@@ -430,7 +425,7 @@ class SeleniumFirefoxRunner(_SeleniumBaseRunner):
 
         options = Options()
         options.add_argument("--headless")
-        for flag in FIREFOX_FLAGS:
+        for flag in get_global_config().firefox_flags:
             options.add_argument(flag)
 
         return Firefox(service=Service(), options=options)
@@ -449,7 +444,7 @@ class SeleniumChromeRunner(_SeleniumBaseRunner):
         if jspi:
             options.add_argument("--enable-features=WebAssemblyExperimentalJSPI")
             options.add_argument("--enable-experimental-webassembly-features")
-        for flag in CHROME_FLAGS:
+        for flag in get_global_config().chrome_flags:
             options.add_argument(flag)
         return Chrome(options=options)
 
@@ -465,7 +460,8 @@ GLOBAL_SAFARI_WEBDRIVER = None
 
 @pytest.fixture(scope="session", autouse=True)
 def use_global_safari_service():
-    if "safari" in pytest.pyodide_runtimes:
+    runtimes = get_runtimes()
+    if "safari" in runtimes:
         global GLOBAL_SAFARI_WEBDRIVER
 
         from selenium.webdriver.common.driver_finder import DriverFinder
@@ -544,7 +540,7 @@ class NodeRunner(_BrowserBaseRunner):
                 f"Node version {node_version} is too old, please use node >= 18"
             )
 
-        extra_args = NODE_FLAGS[:]
+        extra_args = get_global_config().node_flags[:]
         # Node v14 require the --experimental-wasm-bigint which
         # produces errors on later versions
         if jspi:

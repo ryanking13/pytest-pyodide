@@ -3,9 +3,7 @@ from collections.abc import Callable
 from copy import copy
 from doctest import DocTest, DocTestRunner, register_optionflag
 from pathlib import Path
-from typing import cast
 
-import pytest
 from _pytest.doctest import (
     DoctestModule,
     DoctestTextfile,
@@ -18,6 +16,7 @@ from _pytest.scope import Scope
 from pytest import Collector
 
 from . import run_in_pyodide
+from .config import get_global_config, get_runtimes
 from .hook import ORIGINAL_MODULE_ASTS
 
 __all__ = ["patch_doctest_runner", "collect_doctests"]
@@ -40,7 +39,7 @@ def runtime_parametrize(item):
     """
     scope = Scope.from_user("module", "")
     name: str
-    runtimes = cast(list[str], pytest.pyodide_runtimes)
+    runtimes = list(get_runtimes())
     for idx, name in enumerate(runtimes):
         newitem = copy(item)
         # dtest is the actual doctest, we have to mutate it to allow pickling so
@@ -72,7 +71,7 @@ class PyodideDoctestMixin:
             pyodide_test = RUN_IN_PYODIDE in item.dtest.examples[0].options
             item.dtest.pyodide_test = pyodide_test
             if not pyodide_test:
-                if pytest.pyodide_run_host_test:
+                if get_global_config().run_host_test:
                     yield item
                 continue
             yield from runtime_parametrize(item)

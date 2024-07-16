@@ -8,8 +8,7 @@ from copy import deepcopy
 from io import BytesIO
 from typing import Any, Protocol
 
-import pytest
-
+from .config import get_dist_dir
 from .copy_files_to_pyodide import copy_files_to_emscripten_fs
 from .hook import ORIGINAL_MODULE_ASTS, REWRITTEN_MODULE_ASTS
 from .runner import _BrowserBaseRunner
@@ -19,7 +18,7 @@ MaybeAsyncFuncDef = ast.FunctionDef | ast.AsyncFunctionDef
 
 
 def package_is_built(package_name: str):
-    return _package_is_built(package_name, pytest.pyodide_dist_dir)
+    return _package_is_built(package_name, get_dist_dir())
 
 
 class SeleniumType(Protocol):

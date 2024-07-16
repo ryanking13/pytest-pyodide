@@ -1,9 +1,7 @@
 from pathlib import Path
 from textwrap import dedent
 
-import pytest
-
-from pytest_pyodide import run_in_pyodide
+from pytest_pyodide import get_runtimes, run_in_pyodide
 
 DOCTESTS = """\
 def pyodide_fail():
@@ -64,20 +62,21 @@ def test_doctest_run(pytester, selenium, request, playwright_browsers, capsys):
                 fixturedef.cached_result = (val, cache_key, None)
                 return val
 
+    runtimes = get_runtimes()
     result = pytester.inline_run(
         file,
         "--doctest-modules",
         "--dist-dir",
         request.config.getoption("--dist-dir"),
         "--rt",
-        ",".join(pytest.pyodide_runtimes),
+        ",".join(runtimes),
         "--runner",
         request.config.option.runner,
         "--rootdir",
         str(file.parent),
         plugins=(MyPlugin(),),
     )
-    if not pytest.pyodide_runtimes:
+    if not runtimes:
         result.assertoutcome(passed=1)
         return
     result.assertoutcome(passed=2, failed=1)
