@@ -115,6 +115,7 @@ class _BrowserBaseRunner:
         self,
         server_port,
         server_hostname="127.0.0.1",
+        lockfile_url = None,
         server_log=None,
         load_pyodide=True,
         script_type="classic",
@@ -128,6 +129,7 @@ class _BrowserBaseRunner:
         self.server_port = server_port
         self.server_hostname = server_hostname
         self.base_url = f"http://{self.server_hostname}:{self.server_port}"
+        self.lockfile_url = (lockfile_url or self.base_url) + "/pyodide-lock.json"
         self.server_log = server_log
         self.script_type = script_type
         self.dist_dir = dist_dir
@@ -176,7 +178,7 @@ class _BrowserBaseRunner:
 
     def load_pyodide(self):
         self.run_js(
-            self._config.get_load_pyodide_script(self.browser)
+            self._config.get_load_pyodide_script(self.browser).format(lockfile_url=self.lockfile_url),
             + self.POST_LOAD_PYODIDE_SCRIPT
         )
 
@@ -319,7 +321,7 @@ class _BrowserBaseRunner:
             }});
             return await res
             """.format(
-                f"http://{self.server_hostname}:{self.server_port}/{worker_file}",
+                f"{self.base_url}/{worker_file}",
                 self.script_type,
                 code,
             ),

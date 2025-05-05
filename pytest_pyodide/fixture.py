@@ -75,7 +75,8 @@ def _playwright_browsers(request):
 def selenium_common(
     request,
     runtime,
-    web_server_main,
+    web_server_dist,
+    web_server_lockfile=None,
     load_pyodide=True,
     script_type="classic",
     browsers=None,
@@ -87,7 +88,13 @@ def selenium_common(
     return None, as initializing Pyodide for selenium is expensive
     """
 
-    server_hostname, server_port, server_log = web_server_main
+    server_hostname, server_port, server_log = web_server_dist
+    if web_server_lockfile:
+        server_hostname_lockfile, server_port_lockfile, _ = web_server_lockfile
+    else:
+        server_hostname_lockfile = server_hostname
+        server_port_lockfile = server_port
+
     runner_type = request.config.option.runner.lower()
 
     runner_set: dict[tuple[str, str], type[_BrowserBaseRunner]] = {
@@ -107,6 +114,7 @@ def selenium_common(
     runner = runner_cls(
         server_port=server_port,
         server_hostname=server_hostname,
+        lockfile_url = f"http://{server_hostname_lockfile}:{server_port_lockfile}",
         server_log=server_log,
         load_pyodide=load_pyodide,
         browsers=browsers,
@@ -146,9 +154,9 @@ standalone = rename_fixture("selenium", "selenium_standalone")
 
 
 @pytest.fixture(scope="function")
-def selenium_standalone(request, runtime, web_server_main, playwright_browsers):
+def selenium_standalone(request, runtime, web_server_main, web_server_lockfile, playwright_browsers):
     with selenium_common(
-        request, runtime, web_server_main, browsers=playwright_browsers
+        request, runtime, web_server_main, web_server_lockfile, browsers=playwright_browsers
     ) as selenium:
         with set_webdriver_script_timeout(
             selenium, script_timeout=parse_driver_timeout(request.node)
@@ -177,11 +185,12 @@ def selenium_standalone_refresh(selenium):
 
 
 @pytest.fixture(scope="module")
-def selenium_esm(request, runtime, web_server_main, playwright_browsers):
+def selenium_esm(request, runtime, web_server_main, web_server_lockfile, playwright_browsers):
     with selenium_common(
         request,
         runtime,
         web_server_main,
+        web_server_lockfile,
         load_pyodide=True,
         browsers=playwright_browsers,
         script_type="module",
@@ -197,12 +206,13 @@ def selenium_esm(request, runtime, web_server_main, playwright_browsers):
 
 @contextlib.contextmanager
 def selenium_standalone_noload_common(
-    request, runtime, web_server_main, playwright_browsers, script_type="classic"
+    request, runtime, web_server_main, web_server_lockfile, playwright_browsers, script_type="classic"
 ):
     with selenium_common(
         request,
         runtime,
         web_server_main,
+        web_server_lockfile,
         load_pyodide=False,
         browsers=playwright_browsers,
         script_type=script_type,
@@ -218,7 +228,7 @@ def selenium_standalone_noload_common(
 
 @pytest.fixture(scope="function")
 def selenium_webworker_standalone(
-    request, runtime, web_server_main, playwright_browsers, script_type
+    request, runtime, web_server_main, web_server_lockfile, playwright_browsers, script_type
 ):
     # Avoid loading the fixture if the test is going to be skipped
     if runtime == "firefox" and script_type == "module":
@@ -228,27 +238,27 @@ def selenium_webworker_standalone(
         pytest.skip("no support in node")
 
     with selenium_standalone_noload_common(
-        request, runtime, web_server_main, playwright_browsers, script_type=script_type
+        request, runtime, web_server_main, web_server_lockfile, playwright_browsers, script_type=script_type
     ) as selenium:
         yield selenium
 
 
 @pytest.fixture(scope="function")
-def selenium_standalone_noload(request, runtime, web_server_main, playwright_browsers):
+def selenium_standalone_noload(request, runtime, web_server_main, web_server_lockfile, playwright_browsers):
     """Only difference between this and selenium_webworker_standalone is that
     this also tests on node."""
 
     with selenium_standalone_noload_common(
-        request, runtime, web_server_main, playwright_browsers
+        request, runtime, web_server_main, web_server_lockfile, playwright_browsers
     ) as selenium:
         yield selenium
 
 
 # selenium instance cached at the module level
 @pytest.fixture(scope="module")
-def selenium_module_scope(request, runtime, web_server_main, playwright_browsers):
+def selenium_module_scope(request, runtime, web_server_main, web_server_lockfile, playwright_browsers):
     with selenium_common(
-        request, runtime, web_server_main, browsers=playwright_browsers
+        request, runtime, web_server_main, web_server_lockfile, browsers=playwright_browsers
     ) as selenium:
         yield selenium
 
@@ -282,19 +292,19 @@ def selenium(request, selenium_module_scope):
 
 
 @pytest.fixture
-def selenium_jspi(request, runtime, web_server_main, playwright_browsers):
+def selenium_jspi(request, runtime, web_server_main, web_server_lockfile, playwright_browsers):
     yield from selenium_jspi_inner(
-        request, runtime, web_server_main, playwright_browsers
+        request, runtime, web_server_main, web_server_lockfile, playwright_browsers
     )
 
 
-def selenium_jspi_inner(request, runtime, web_server_main, playwright_browsers):
+def selenium_jspi_inner(request, runtime, web_server_main, web_server_lockfile, playwright_browsers):
     if runtime in ["firefox", "safari"]:
         pytest.skip(f"jspi not supported in {runtime}")
     if request.config.option.runner.lower() == "playwright":
         pytest.skip("jspi not supported with playwright")
     with selenium_common(
-        request, runtime, web_server_main, browsers=playwright_browsers, jspi=True
+        request, runtime, web_server_main, web_server_lockfile, browsers=playwright_browsers, jspi=True
     ) as selenium, set_webdriver_script_timeout(
         selenium, script_timeout=parse_driver_timeout(request.node)
     ):
@@ -303,19 +313,19 @@ def selenium_jspi_inner(request, runtime, web_server_main, playwright_browsers):
 
 @pytest.fixture(params=[False, True])
 def selenium_also_with_jspi(
-    selenium, request, runtime, web_server_main, playwright_browsers
+    selenium, request, runtime, web_server_main, web_server_lockfile, playwright_browsers
 ):
     jspi = request.param
     if not jspi:
         yield selenium
         return
     yield from selenium_jspi_inner(
-        request, runtime, web_server_main, playwright_browsers
+        request, runtime, web_server_main, web_server_lockfile, playwright_browsers
     )
 
 
 @pytest.fixture(scope="function")
-def console_html_fixture(request, runtime, web_server_main, playwright_browsers):
+def console_html_fixture(request, runtime, web_server_main, web_server_lockfile, playwright_browsers):
     if runtime == "node":
         pytest.skip("no support in node")
 
@@ -323,6 +333,7 @@ def console_html_fixture(request, runtime, web_server_main, playwright_browsers)
         request,
         runtime,
         web_server_main,
+        web_server_lockfile,
         load_pyodide=False,
         browsers=playwright_browsers,
     ) as selenium:
@@ -347,6 +358,16 @@ def web_server_main(request):
 def web_server_secondary(request):
     """Secondary web server that serves files dist directory"""
     with spawn_web_server(request.config.option.dist_dir) as output:
+        yield output
+
+
+@pytest.fixture(scope="session")
+def web_server_lockfile(request):
+    """Web server that serves files in the lockfile directory"""
+    if not request.config.option.lockfile_dir:
+        return None
+    
+    with spawn_web_server(request.config.option.lockfile_dir) as output:
         yield output
 
 
