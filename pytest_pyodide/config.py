@@ -7,7 +7,7 @@ from typing import Literal
 RUNTIMES = Literal["chrome", "firefox", "node", "safari"]
 
 _global_load_pyodide_script = """
-let pyodide = await loadPyodide({ fullStdLib: false, jsglobals : self, lockFileURL: "%s" });
+let pyodide = await loadPyodide({{ fullStdLib: false, jsglobals : self, lockFileURL: "{lockfile_url}" }});
 """
 
 

@@ -178,7 +178,7 @@ class _BrowserBaseRunner:
 
     def load_pyodide(self):
         self.run_js(
-            self._config.get_load_pyodide_script(self.browser) % self.lockfile_url,
+            self._config.get_load_pyodide_script(self.browser).format(lockfile_url=self.lockfile_url)
             + self.POST_LOAD_PYODIDE_SCRIPT
         )
 
