@@ -104,7 +104,6 @@ def selenium_common(
     if runner_cls is None:
         raise AssertionError(f"Unknown runner or browser: {runner_type} / {runtime}")
 
-    dist_dir = Path(os.getcwd(), request.config.getoption("--dist-dir"))
     runner = runner_cls(
         server_port=server_port,
         server_hostname=server_hostname,
@@ -112,7 +111,7 @@ def selenium_common(
         load_pyodide=load_pyodide,
         browsers=browsers,
         script_type=script_type,
-        dist_dir=dist_dir,
+        dist_dir=pytest.pyodide_dist_dir,
         jspi=jspi,
     )
     try:

@@ -93,6 +93,7 @@ def pytest_configure(config):
     )
 
     config.option.dist_dir = Path(config.option.dist_dir).resolve()
+    config.option.lockfile_dir = Path(config.option.lockfile_dir or config.option.dist_dir).resolve()
     run_host, runtimes = _filter_runtimes(config.option.runtime)
 
     if not hasattr(pytest, "pyodide_options_stack"):
@@ -103,11 +104,13 @@ def pytest_configure(config):
                 pytest.pyodide_run_host_test,
                 pytest.pyodide_runtimes,
                 pytest.pyodide_dist_dir,
+                pytest.pyodide_lockfile_dir,
             ]
         )
     pytest.pyodide_run_host_test = run_host
     pytest.pyodide_runtimes = runtimes
     pytest.pyodide_dist_dir = config.option.dist_dir
+    pytest.pyodide_lockfile_dir = config.option.lockfile_dir
 
 
 def pytest_unconfigure(config):
@@ -117,6 +120,7 @@ def pytest_unconfigure(config):
             pytest.pyodide_run_host_test,
             pytest.pyodide_runtimes,
             pytest.pyodide_dist_dir,
+            pytest.pyodide_lockfile_dir,
         ) = pytest.pyodide_options_stack.pop()  # type:ignore[attr-defined]
     except IndexError:
         pass
@@ -132,6 +136,13 @@ def pytest_addoption(parser):
         default="pyodide",
         help="Path to the pyodide dist directory",
         type=Path,
+    )
+    group.addoption(
+        "--lockfile-dir",
+        dest="lockfile_dir",
+        action="store",
+        default=None,
+        help="Path to the pyodide lockfile directory",
     )
     group.addoption(
         "--runner",

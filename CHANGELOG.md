@@ -1,5 +1,13 @@
 ## Unreleased
 
+### Added
+
+- A new command-line argument `--lockfile-dir` is added. The directory
+  should contain `pyodide-lock.json` in it, and it will be passed as `lockFileURL` when
+  loading Pyodide. When not specified, the `--dist-dir`
+  is used as the default lockfile directory.
+  []()
+
 ### Fixed
 
 - Fixed path handling in windows environment.
