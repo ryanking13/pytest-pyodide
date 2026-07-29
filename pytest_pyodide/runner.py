@@ -1,13 +1,17 @@
 import json
+import logging
 import os
+import tempfile
 import textwrap
+import time
 from pathlib import Path
 
 import pexpect
 import pytest
 
 from .config import RUNTIMES, get_global_config
-from .hook import pytest_wrapper
+
+logger = logging.getLogger(__name__)
 
 TEST_SETUP_CODE = """
 Error.stackTraceLimit = Infinity;
@@ -473,63 +477,208 @@ class SeleniumChromeRunner(_SeleniumBaseRunner):
         self.driver.execute_cdp_cmd("HeapProfiler.collectGarbage", {})
 
 
-# Stopping and starting the safari webdriver multiple times during the test
-# often causes unexpected errors. So we make a global webdriver instance and
-# reuse it.
-GLOBAL_SAFARI_WEBDRIVER = None
+# safaridriver exits with status 1 when the port it was told to use is already
+# taken ("Unable to start the server: Address already in use"). Selenium picks
+# that port with ``utils.free_port()``, which binds a socket, reads the port
+# number and closes the socket again, so another process can claim the port
+# before safaridriver gets to bind it. Retrying with a freshly constructed
+# Service (and therefore a freshly picked port) works around that race.
+SAFARI_START_RETRIES = 3
+SAFARI_START_INTERVAL = 1.0
+SAFARI_START_DEADLINE = 60.0
+
+# Selenium reports every safaridriver startup problem as a bare
+# WebDriverException, so the message is the only thing we can discriminate on.
+# This is an allowlist on purpose: failing fast on an unrecognized error is far
+# cheaper than burning the whole deadline retrying something that will never
+# recover, such as a missing safaridriver, wrong file permissions, or "Allow
+# Remote Automation" being disabled.
+_SAFARI_RETRYABLE_ERRORS = (
+    # Service.assert_process_still_running(): safaridriver died during startup.
+    "unexpectedly exited",
+    # Service.start(): the port never became connectable.
+    "Can not connect to the Service",
+)
 
 
-@pytest.fixture(scope="session", autouse=True)
-def use_global_safari_service():
-    if "safari" in pytest_wrapper.pyodide_runtimes:
-        global GLOBAL_SAFARI_WEBDRIVER
+def safari_startup_log_path() -> Path:
+    """Return the path safaridriver's stdout/stderr is captured to.
 
-        from selenium.webdriver.common.driver_finder import DriverFinder
-        from selenium.webdriver.safari.options import Options
-        from selenium.webdriver.safari.service import Service
+    Selenium redirects the driver's output to ``os.devnull`` by default, which
+    makes a failed startup impossible to diagnose from CI logs. Set
+    ``PYTEST_PYODIDE_SAFARI_LOG`` to redirect it somewhere collectable as a CI
+    artifact.
+    """
+    log_path = os.environ.get("PYTEST_PYODIDE_SAFARI_LOG")
+    if log_path:
+        return Path(log_path)
+    return Path(tempfile.gettempdir()) / "pytest_pyodide_safaridriver.log"
 
-        GLOBAL_SAFARI_WEBDRIVER = Service(reuse_service=True)
 
+def _read_log_tail(log_path: Path, max_lines: int = 20) -> str:
+    try:
+        contents = log_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return "\n".join(contents.splitlines()[-max_lines:]).strip()
+
+
+def _is_retryable_safari_error(exc: BaseException) -> bool:
+    from selenium.common.exceptions import NoSuchDriverException
+
+    # NoSuchDriverException subclasses WebDriverException, but a driver that
+    # cannot be found will not appear on a later attempt.
+    if isinstance(exc, NoSuchDriverException):
+        return False
+
+    return any(marker in str(exc) for marker in _SAFARI_RETRYABLE_ERRORS)
+
+
+def _discard_safari_service(service) -> None:
+    """Reap a service whose ``start()`` failed.
+
+    ``Service.start()`` does no cleanup of its own, so a safaridriver that
+    launched but never became connectable is still running by the time the
+    exception reaches us. We deliberately do not let ``Service.stop()`` deal
+    with the process: it waits up to 60 seconds for a graceful exit, which we
+    cannot afford between attempts. Clearing ``process`` first also keeps
+    ``Service.__del__`` from re-entering that wait later on.
+    """
+    process = getattr(service, "process", None)
+    service.process = None
+
+    # Still call stop(): with ``process`` cleared it only closes the log file
+    # handle, which we want released before the log is read back.
+    try:
+        service.stop()
+    except Exception:
+        pass
+
+    if process is None or process.poll() is not None:
+        return
+
+    for terminate in (process.terminate, process.kill):
         try:
-            # selenium >= 4.20
-            # https://github.com/SeleniumHQ/selenium/pull/13387
-            finder = DriverFinder(GLOBAL_SAFARI_WEBDRIVER, Options())
-            browser_path = finder.get_driver_path()
+            terminate()
+            process.wait(timeout=5)
+            return
         except Exception:
-            # selenium < 4.20
-            browser_path = DriverFinder.get_path(GLOBAL_SAFARI_WEBDRIVER, Options())
+            continue
 
-        GLOBAL_SAFARI_WEBDRIVER.path = browser_path
-        GLOBAL_SAFARI_WEBDRIVER.start()
+
+def start_safari_service(
+    *,
+    retries: int = SAFARI_START_RETRIES,
+    interval: float = SAFARI_START_INTERVAL,
+    deadline: float = SAFARI_START_DEADLINE,
+    log_path: Path | None = None,
+):
+    """Start a safaridriver service, retrying transient startup failures.
+
+    Returns a started ``Service`` configured with ``reuse_service=True``, so the
+    webdriver instances built on top of it neither restart nor stop it.
+    """
+    from selenium.webdriver.common.driver_finder import DriverFinder
+    from selenium.webdriver.safari.options import Options
+    from selenium.webdriver.safari.service import Service
+
+    if log_path is None:
+        log_path = safari_startup_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Resolve the driver binary once, up front. Doing this outside the loop means
+    # a missing or invalid safaridriver raises NoSuchDriverException immediately
+    # rather than being retried.
+    driver_path = DriverFinder(Service(), Options()).get_driver_path()
+
+    give_up_at = time.monotonic() + deadline
+    last_exc: BaseException | None = None
+
+    for attempt in range(1, retries + 1):
+        # The port is chosen in ``Service.__init__``, so each attempt needs a new
+        # object to get a new port.
+        service = Service(reuse_service=True, log_output=str(log_path))
+        service.path = driver_path
 
         try:
-            yield GLOBAL_SAFARI_WEBDRIVER
-        finally:
-            GLOBAL_SAFARI_WEBDRIVER.stop()
+            service.start()
+        except Exception as exc:
+            _discard_safari_service(service)
+
+            if not _is_retryable_safari_error(exc):
+                raise
+
+            last_exc = exc
+            if attempt == retries or time.monotonic() >= give_up_at:
+                break
+
+            logger.warning(
+                "safaridriver failed to start (attempt %d/%d), retrying in %.1fs: %s",
+                attempt,
+                retries,
+                interval,
+                exc,
+            )
+            time.sleep(interval)
+        else:
+            if attempt > 1:
+                logger.warning(
+                    "safaridriver started on attempt %d/%d", attempt, retries
+                )
+            return service
+
+    log_tail = _read_log_tail(log_path)
+    if log_tail:
+        detail = f"\nsafaridriver output ({log_path}):\n{log_tail}"
     else:
-        yield None
+        detail = f"\nNo safaridriver output was captured in {log_path}."
+
+    raise RuntimeError(
+        f"safaridriver failed to start after {retries} attempts.{detail}"
+    ) from last_exc
+
+
+@pytest.fixture(scope="session")
+def use_global_safari_service():
+    """Deprecated no-op, kept for backward compatibility."""
+    yield None
 
 
 class SeleniumSafariRunner(_SeleniumBaseRunner):
     browser = "safari"
     script_timeout = 30
+    _service = None
 
     def get_driver(self, jspi=False):
         if jspi:
-            raise NotImplementedError("JSPI not supported in Firefox")
+            raise NotImplementedError("JSPI not supported in Safari")
         from selenium.webdriver import Safari
         from selenium.webdriver.safari.options import Options
 
-        options = Options()
-        if GLOBAL_SAFARI_WEBDRIVER is not None:
-            instance = Safari(
-                options=options,
-                service=GLOBAL_SAFARI_WEBDRIVER,
-            )
-        else:
-            instance = Safari(options=options)
+        # Start the service ourselves so a flaky launch can be retried and its
+        # stderr captured. ``reuse_service=True`` keeps Safari from starting it a
+        # second time, which makes stopping it our responsibility.
+        self._service = start_safari_service()
+        try:
+            return Safari(options=Options(), service=self._service)
+        except Exception:
+            self._stop_service()
+            raise
 
-        return instance
+    def quit(self):
+        try:
+            super().quit()
+        finally:
+            self._stop_service()
+
+    def _stop_service(self):
+        service, self._service = self._service, None
+        if service is None:
+            return
+        try:
+            service.stop()
+        except Exception:
+            logger.warning("Failed to stop the safaridriver service", exc_info=True)
 
 
 class _BrowserWorkerRunnerMixin(_BrowserBaseRunner):
